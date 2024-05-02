@@ -1,0 +1,369 @@
+```{r User por ID}
+library(httr)
+library(jsonlite)
+
+# Defina o UID do usuário do OpenStreetMap que você deseja consultar
+uid_usuario <- 21160844
+
+# Faça a solicitação à API de Edições para obter o histórico de edições do usuário pelo UID
+url <- paste0("https://api.openstreetmap.org/api/0.6/changesets?user=", uid_usuario)
+resposta <- GET(url)
+
+# Verifique se a solicitação foi bem-sucedida
+stop_for_status(resposta)
+
+# Extrair o conteúdo da resposta (JSON)
+conteudo <- content(resposta, "text", encoding = "UTF-8")
+
+# Analisar o JSON
+dados_json <- fromJSON(conteudo)
+
+# Extrair os IDs dos changesets do JSON
+ids_changesets <- dados_json$changeset$id
+
+# Exibir os IDs dos changesets
+print(ids_changesets)
+
+dados_df <- as.data.frame(dados_json)
+
+str(dados_df)
+```
+
+```{r User por Username}
+library(httr)
+library(jsonlite)
+
+# Defina o UID do usuário do OpenStreetMap que você deseja consultar
+uid_usuario <- "Aimée Borges"
+
+# Faça a solicitação à API de Edições para obter o histórico de edições do usuário pelo UID
+url <- paste0("https://api.openstreetmap.org/api/0.6/changesets?display_name=", URLencode(uid_usuario))
+resposta <- GET(url)
+
+# Verifique se a solicitação foi bem-sucedida
+stop_for_status(resposta)
+
+# Extrair o conteúdo da resposta (JSON)
+conteudo <- content(resposta, "text", encoding = "UTF-8")
+
+# Analisar o JSON
+dados_json <- fromJSON(conteudo)
+
+# Extrair os IDs dos changesets do JSON
+ids_changesets <- dados_json$changeset$id
+
+# Exibir os IDs dos changesets
+print(ids_changesets)
+
+dados_df <- as.data.frame(dados_json)
+
+str(dados_df)
+```
+
+```{r}
+YM_Users <- data.frame(
+  Nome = character()
+)
+users <- data.frame(Nome = c("Mauricio Ed", "Aimée Borges", "Nivea Pinheiro", "Felipe_Ximenes"))
+
+YM_Users <- rbind(YM_Users, users)
+
+print(YM_Users)
+```
+
+
+
+```{r Dados de Todos os Usuarios}
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+get_user_info <- function(username) {
+  dados_brutos <- list()
+  
+  for (user in username) {
+    # Defina o UID do usuário do OpenStreetMap que você deseja consultar
+    uid_usuario <- URLencode(user)
+    
+    # Faça a solicitação à API de Edições para obter o histórico de edições do usuário pelo UID
+    url <- paste0("https://api.openstreetmap.org/api/0.6/changesets?display_name=", uid_usuario)
+    resposta <- GET(url)
+    
+    # Verifique se a solicitação foi bem-sucedida
+    stop_for_status(resposta)
+    
+    # Extrair o conteúdo da resposta (JSON)
+    conteudo <- content(resposta, "text", encoding = "UTF-8")
+    
+    # Analisar o JSON
+    dados_json <- fromJSON(conteudo)
+    
+    # Adicionar uma coluna com o nome do usuário
+    dados_json$changesets.user <- user
+    
+    dados_brutos[[user]] <- dados_json$changesets
+  }
+  
+  # Converter a lista de dataframes em um único dataframe
+  dados_df <- bind_rows(dados_brutos)
+  
+  # Retornar o dataframe
+  return(dados_df)
+}
+
+# Obter os nomes de usuário da tabela YM_Users
+usernames <- YM_Users$Nome
+
+# Chamar a função get_user_info com os nomes de usuário
+YM_Dados <- get_user_info(usernames)
+
+str(YM_Dados)
+
+```
+
+```{r}
+changeset_id <- 150267342
+
+url <- paste0 ("https://api.openstreetmap.org/api/0.6/nwr/changesets?changesets=", changeset_id)
+resposta <- GET(url)
+
+stop_for_status(resposta)
+
+conteudo <- content(resposta, "text", encoding = "UTF-8")
+
+dados_json <- fromJSON(conteudo)
+
+dados_df <- as.data.frame(dados_json)
+
+str(dados_df)
+```
+
+```{r}
+library(osmdata)
+
+# Defina o ID do changeset que você deseja consultar
+changeset_id <- 150267342
+
+# Construa uma consulta Overpass para obter nós e caminhos do changeset
+overpass_query <- paste0("
+  [out:json];
+  (changeset:", changeset_id,");
+  (node; way;);
+  (._;>;);
+  out;"
+)
+
+# Execute a consulta Overpass e armazene os resultados
+osm_data <- opq(overpass_query) %>% 
+  osmdata_sf()
+
+# Visualize as camadas disponíveis
+osm_data
+```
+
+```{r}
+library(osmdata)
+
+# Defina o ID do changeset que você deseja consultar
+changeset_id <- 150267342
+bbox_info <-   paste0(YM_Dados[YM_Dados$id == changeset_id, "min_lat"], ",", YM_Dados[YM_Dados$id == changeset_id, "min_lon"],",", YM_Dados[YM_Dados$id == changeset_id, "max_lat"],",", YM_Dados[YM_Dados$id == changeset_id, "max_lon"],"];")
+
+# Construa uma consulta Overpass para obter nós e caminhos do changeset
+overpass_query <- paste0("
+    [out:json];
+    nwr({{", bbox_info,"}})(user:''Mauricio Ed'')(if: changeset() == 150267342);
+    out meta;")
+
+# Execute a consulta Overpass e armazene os resultados
+osm_data <- opq(overpass_query) %>% 
+  osmdata_sf()
+
+# Visualize as camadas disponíveis
+osm_data
+```
+
+```{r GeoJSON TomTom}
+library(sf)
+
+# Substitua 'caminho/para/seu/arquivo.geojson' pelo caminho do seu arquivo GeoJSON
+dados_sf <- st_read("538-tasks.geojson")
+
+# Converta o objeto sf para um dataframe
+SaoMarcos_TomTom <- st_as_sf(dados_sf)
+
+# Visualize as primeiras linhas do dataframe
+head(SaoMarcos_TomTom)
+
+```
+
+```{r Query Overpass que pega os nodes}
+
+[out:json];
+nwr({{bbox}})(user:"Mauricio Ed")(if: changeset() == 150267342);
+out meta;
+```
+
+```{r}
+library(osmdata)
+
+username <- "Mauricio Ed"
+changeset_id <- 150267342
+bbox_info <- paste0(YM_Dados[YM_Dados$id == changeset_id, "min_lat"], ",", 
+                    YM_Dados[YM_Dados$id == changeset_id, "min_lon"], ",", 
+                    YM_Dados[YM_Dados$id == changeset_id, "max_lat"], ",", 
+                    YM_Dados[YM_Dados$id == changeset_id, "max_lon"])
+
+url <- paste0("[out:json];
+nwr({{bbox|", bbox_info,"}})(user:", username,")(if: changeset() == ", changeset_id,");
+out meta;")
+resposta <- opq(url)
+    
+# Verifique se a solicitação foi bem-sucedida
+stop_for_status(resposta)
+    
+# Extrair o conteúdo da resposta (JSON)
+conteudo <- content(resposta, "text", encoding = "UTF-8")
+    
+# Analisar o JSON
+dados_json <- fromJSON(conteudo)
+
+```
+
+```{r}
+library(osmdata)
+
+username <- "Mauricio Ed"
+changeset_id <- 150267342
+bbox_info <- paste0(YM_Dados[YM_Dados$id == changeset_id, "min_lat"], ",", YM_Dados[YM_Dados$id == changeset_id, "min_lon"],",", YM_Dados[YM_Dados$id == changeset_id, "max_lat"],",", YM_Dados[YM_Dados$id == changeset_id, "max_lon"],"];")
+
+url <- paste0("[out:json];
+nwr({{bbox = 'Salvador, Brasil'}})(user:", username,")(if: changeset() == ", changeset_id,");
+out meta;")
+resposta <- opq(url)
+    
+# Verifique se a solicitação foi bem-sucedida
+stop_for_status(resposta)
+    
+# Extrair o conteúdo da resposta (JSON)
+conteudo <- content(resposta, "text", encoding = "UTF-8")
+    
+# Analisar o JSON
+dados_json <- fromJSON(conteudo)
+```
+
+
+```{r}
+library(osmdata)
+
+username <- "Mauricio Ed"
+changeset_id <- 150267342
+bbox_info <- paste0(YM_Dados[YM_Dados$id == changeset_id, "min_lat"], ",", YM_Dados[YM_Dados$id == changeset_id, "min_lon"],",", YM_Dados[YM_Dados$id == changeset_id, "max_lat"],",", YM_Dados[YM_Dados$id == changeset_id, "max_lon"],"];")
+```
+
+```{r}
+library(osmdata)
+
+username <- "Mauricio Ed"
+changeset_id <- 150267342
+
+# Obtenha as informações do bounding box do conjunto de dados YM_Dados
+bbox_info <- paste0(YM_Dados[YM_Dados$id == changeset_id, "min_lat"], ",", 
+                     YM_Dados[YM_Dados$id == changeset_id, "min_lon"], ",", 
+                     YM_Dados[YM_Dados$id == changeset_id, "max_lat"], ",", 
+                     YM_Dados[YM_Dados$id == changeset_id, "max_lon"])
+
+# Construa a consulta Overpass API com as informações do bounding box
+url <- paste0("[out:json];
+              [bbox:", bbox_info,"]
+              nwr
+              (user:", username,")
+              (if: changeset() == ", changeset_id, ");
+              out meta;")
+
+# Execute a consulta Overpass API
+resposta <- opq(url)
+
+# Verifique se a solicitação foi bem-sucedida
+stop_for_status(resposta)
+
+# Extrair o conteúdo da resposta (JSON)
+conteudo <- content(resposta, "text", encoding = "UTF-8")
+
+# Analisar o JSON
+dados_json <- fromJSON(conteudo)
+
+```
+
+```{r}
+library(osmdata)
+
+username <- "Mauricio Ed"
+changeset_id <- 150267342
+bbox_info <- paste0(YM_Dados[YM_Dados$id == changeset_id, "min_lat"], ",", 
+                    YM_Dados[YM_Dados$id == changeset_id, "min_lon"], ",", 
+                    YM_Dados[YM_Dados$id == changeset_id, "max_lat"], ",", 
+                    YM_Dados[YM_Dados$id == changeset_id, "max_lon"])
+
+overpass_query <- opq(bbox = c(bbox_info)) %>%
+  add_osm_feature(user = username) %>%
+  add_osm_filter(changeset = changeset_id) %>%
+  osmdata_sf()
+
+osm_data <- osmdata_sf(overpass_query)
+
+print(osm_data)
+```
+
+```{r}
+library(osmdata)
+
+# Defina os parâmetros da consulta
+username <- "'Mauricio Ed'"
+changeset_id <- 150267342
+
+# Construa a consulta Overpass API usando a função opq()
+overpass_query <- opq(bbox = NULL) %>%
+  add_osm_feature(user = username) %>%
+  add_osm_condition(changeset = changeset_id) %>%
+  osmdata_sf()
+
+# Execute a consulta e armazene os dados
+osm_data <- osmdata_sf(overpass_query)
+
+# Visualize os dados
+print(osm_data)
+```
+
+```{r}
+library(httr)
+library(jsonlite)
+
+# Defina os parâmetros da consulta
+username <- "'Mauricio Ed'"
+changeset_id <- 150267342
+cidade = "Bahia"
+
+# Construa a consulta Overpass API usando a função opq()
+overpass_query <- paste0("[out:json];
+nwr({{geocodeArea:", cidade,"}})(user:", username,")(if: changeset() == ", changeset_id,");
+out meta;")
+
+overpass_codificada <- URLencode(overpass_query)
+
+url <- paste0("https://overpass-api.de/api/interpreter?data=", overpass_codificada)
+
+resposta <- GET(url)
+
+# Verificar se a solicitação foi bem-sucedida
+stop_for_status(resposta)
+
+# Extrair o conteúdo da resposta
+conteudo <- content(resposta, "text", encoding = "UTF-8")
+
+# Converter o conteúdo JSON em um data frame
+overpass_eg <- fromJSON(conteudo)
+
+# Visualizar os dados
+str(overpass_eg)
+```
+
