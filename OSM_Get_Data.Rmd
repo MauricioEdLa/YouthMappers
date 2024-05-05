@@ -1,0 +1,183 @@
+---
+title: "OSM: Dados dos Usuarios e dos changesets"
+author: "Maurício Eduardo Landim"
+date: "`r format(Sys.time(), '%d de %B, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+  word_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introdução
+
+  O objetivo deste documento é recolher os dados dos usuarios atraves do seu nome de usuario pela API RESTful do Open Street Map e atraves dos dados adquiridos dos usuarios, recolher as informações dos changesets criados por estes usuarios atraves da Overpass API.
+  
+## API RESTful
+
+Primeira etapa será fazer uma tabela com o nome de todos os membros ativos.
+
+```{r Lista com o nome dos users}
+YM_Users <- data.frame(
+  Nome = character()
+)
+users <- data.frame(Nome = c("Mauricio Ed", "Aimée Borges", "Nivea Pinheiro", "Felipe_Ximenes"))
+
+YM_Users <- rbind(YM_Users, users)
+
+print(YM_Users)
+```
+
+  Apos feita a tabela, puxar os dados de cada usuario atraves de seu display_name (equivalente ao nome do usuario).
+
+```{r Dados de Todos os Usuarios}
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+get_user_info <- function(username) {
+  dados_brutos <- list()
+  
+  for (user in username) {
+    # Defina o UID do usuário do OpenStreetMap que você deseja consultar
+    uid_usuario <- URLencode(user)
+    
+    # Faça a solicitação à API de Edições para obter o histórico de edições do usuário pelo UID
+    url <- paste0("https://api.openstreetmap.org/api/0.6/changesets?display_name=", uid_usuario)
+    resposta <- GET(url)
+    
+    # Verifique se a solicitação foi bem-sucedida
+    stop_for_status(resposta)
+    
+    # Extrair o conteúdo da resposta (JSON)
+    conteudo <- content(resposta, "text", encoding = "UTF-8")
+    
+    # Analisar o JSON
+    dados_json <- fromJSON(conteudo)
+    
+    # Adicionar uma coluna com o nome do usuário
+    dados_json$changesets.user <- user
+    
+    dados_brutos[[user]] <- dados_json$changesets
+  }
+  
+  # Converter a lista de dataframes em um único dataframe
+  dados_df <- bind_rows(dados_brutos)
+  
+  # Retornar o dataframe
+  return(dados_df)
+}
+
+# Obter os nomes de usuário da tabela YM_Users
+usernames <- YM_Users$Nome
+
+# Chamar a função get_user_info com os nomes de usuário
+YM_Dados <- get_user_info(usernames)
+```
+
+## Overpass API
+
+  Já que possuimos os dados fornecidos pelo OSM sobre os usuarios, agora podemos fazer consultas utilizando os dados fornecidos. Os principais dados que usaremos serão as colunas id (que representa o id do changeset), min_lat, min_lon, max_lat, max_lon e user.
+  
+  Importante frisar que o Overpass usa uma linguagem propria conhecida como Overpass QL, que é uma abreviação de Query Language (Linguagem de Pesquisa). Utilizaremos de uma consulta Overpass QL para conseguir puxar a informação da API Overpass.
+
+[out:json];
+nwr(-12.91892,-38.43726,-12.91600,-38.43545)(user:"Mauricio Ed")(if: changeset() == 150267342);
+out meta;
+
+  A partir disso, iremos criar uma função para mudar os dados dinamicamente desta consulta Overpass QL, assim puxando os dados de todos os changesets feitos pelos usuarios. 
+  Um bug que o codigo abaixo possui é que quando o changeset retorna um valor vazio eu não consigo adiciona-lo a tabela com os demais dados. Por isso, se faz necessario criar uma lista com os changesets que estão retornando sem valores.
+
+```{r Dados dos changesets}
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+# Função para consultar o Overpass API para um changeset específico de um usuário específico
+consultar_overpass <- function(username, changeset_id, min_lat, min_lon, max_lat, max_lon) {
+  
+  # Construir a consulta Overpass API usando a função opq()
+  overpass_query <- paste0("[out:json];
+nwr(", min_lat, ",", min_lon, ",", max_lat, ",", max_lon, ")(user:'", username, "')(if: changeset() == ", changeset_id, ");
+out meta;")
+
+  cat("Consulta Overpass Query:", overpass_query, "\n")  # Imprimir a consulta
+  
+  url <- paste0("https://overpass-api.de/api/interpreter?data=", URLencode(overpass_query))
+  
+  cat("URL da consulta:", url, "\n")  # Imprimir a URL
+  
+  resposta <- GET(url)
+  
+  # Verificar se a solicitação foi bem-sucedida
+  stop_for_status(resposta)
+  
+  # Extrair o conteúdo da resposta
+  conteudo <- content(resposta, "text", encoding = "UTF-8")
+  
+  # Converter o conteúdo JSON em um data frame
+  overpass_data <- fromJSON(conteudo)
+  
+  return(as.data.frame(overpass_data))
+}
+
+# Lista para armazenar os resultados
+resultados <- list()
+# Lista para armazenar os changesets que não retornam resultados
+changesets_vazios <- c()
+
+# Valor de changeset_id a ser evitado
+changeset_id_evitado <- 149048503  # Substitua x pelo valor desejado
+
+# Iterar sobre cada linha da tabela YM_Dados
+for (i in 1:nrow(YM_Dados)) {
+  # Verificar se o changeset_id é igual ao valor a ser evitado
+  if (YM_Dados$id[i] == changeset_id_evitado) {
+    cat("Pulando a consulta para o changeset_id", changeset_id_evitado, "\n")
+    next  # Pular para a próxima iteração do loop
+  }
+  
+  # Consultar o Overpass API para cada changeset_id e usuário
+  resultado <- consultar_overpass(YM_Dados$user[i], YM_Dados$id[i], 
+                                  YM_Dados$min_lat[i], YM_Dados$min_lon[i], 
+                                  YM_Dados$max_lat[i], YM_Dados$max_lon[i])
+  
+  # Verificar se o resultado está vazio
+  if (nrow(resultado) == 0) {
+    # Se estiver vazio, armazenar o changeset_id na lista de changesets vazios
+    changesets_vazios <- c(changesets_vazios, YM_Dados$id[i])
+  } else {
+    # Verificar e garantir que todos os resultados tenham as mesmas colunas
+    colunas_resultado <- colnames(resultado)
+    colunas_resultado_comuns <- Reduce(intersect, lapply(resultados, colnames))
+    colunas_a_adicionar <- setdiff(colunas_resultado_comuns, colunas_resultado)
+    
+    for (coluna in colunas_a_adicionar) {
+      resultado[[coluna]] <- NA
+    }
+    
+    # Armazenar o resultado na lista
+    resultados[[i]] <- resultado
+  }
+}
+
+# Verificar quais changesets não retornaram resultados
+print("Changesets sem resultados:")
+print(changesets_vazios)
+
+# Remover as entradas vazias da lista de resultados
+resultados <- resultados[!sapply(resultados, is.null)]
+
+# Verificar se há resultados
+if (length(resultados) > 0) {
+  # Unir os resultados em um único data frame
+  resultados_completos <- bind_rows(resultados)
+}
+```
+
