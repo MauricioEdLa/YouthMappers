@@ -1,0 +1,367 @@
+---
+title: "OSM: Dados dos Usuarios e dos changesets"
+author: "Maurício Eduardo Landim"
+date: "`r format(Sys.time(), '%d de %B, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+  word_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## API RESTful
+
+Primeira etapa será fazer uma tabela com o nome de todos os membros ativos.
+
+```{r Lista com o nome dos users}
+YM_Users <- data.frame(
+  Nome = character()
+)
+
+Youth_Users <- read.csv("cadastro_YM.csv", header = TRUE)
+
+users <- Youth_Users$username_osm
+
+YM_Users <- data.frame(Nome = users, check.names = FALSE)
+
+YM_Users <- data.frame(Nome = YM_Users, check.names = FALSE)
+
+print(YM_Users)
+```
+
+## Recolher arquivos JSON dos usuarios
+
+```{r}
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+get_user_info <- function(usernames) {
+  dados_brutos <- list()
+  usuarios_sem_resultados <- c()  # Lista para armazenar usuários sem resultados
+  usuarios_com_erro <- c()        # Lista para armazenar usuários com erro 404 ou outros
+  
+  for (user in usernames) {
+    # Defina o UID do usuário do OpenStreetMap que você deseja consultar
+    uid_usuario <- URLencode(user)
+    
+    # Faça a solicitação à API de Edições para obter o histórico de edições do usuário pelo UID
+    url <- paste0("https://api.openstreetmap.org/api/0.6/changesets?display_name=", uid_usuario)
+    
+    cat("URL da consulta:", url, "\n") # Imprime a URL
+    
+    # Tente fazer a solicitação e capturar erros
+    resposta <- tryCatch({
+      GET(url)
+    }, error = function(e) {
+      cat("Erro ao fazer a solicitação para o usuário:", user, "\n")
+      usuarios_com_erro <- c(usuarios_com_erro, user)  # Adicionar o usuário à lista de usuários com erro
+      return(NULL)  # Retornar NULL para pular para a próxima iteração
+    })
+    
+    # Verifique se a resposta é NULL (significa que ocorreu um erro)
+    if (is.null(resposta)) {
+      next  # Pular para a próxima iteração do loop
+    }
+    
+    # Verifique se a solicitação foi bem-sucedida
+    tryCatch({
+      stop_for_status(resposta)
+    }, error = function(e) {
+      cat("Erro na solicitação para o usuário:", user, "\n")
+      usuarios_com_erro <- c(usuarios_com_erro, user)  # Adicionar o usuário à lista de usuários com erro
+      return(NULL)  # Retornar NULL para pular para a próxima iteração
+    })
+    
+    # Extrair o conteúdo da resposta (texto)
+    conteudo <- content(resposta, "text", encoding = "UTF-8")
+    
+    # Verificar se o conteúdo é JSON válido
+    if (!jsonlite::validate(conteudo)) {
+      cat("Conteúdo não é JSON válido para o usuário:", user, "\n")
+      usuarios_com_erro <- c(usuarios_com_erro, user)  # Adicionar o usuário à lista de usuários com erro
+      next  # Pular para a próxima iteração do loop
+    }
+    
+    # Analisar o JSON
+    dados_json <- fromJSON(conteudo)
+    
+    # Verificar se há resultados
+    if (length(dados_json$changesets) == 0) {
+      cat("Nenhum resultado para o usuário:", user, "\n")
+      usuarios_sem_resultados <- c(usuarios_sem_resultados, user)  # Adicionar o usuário à lista de usuários sem resultados
+      next  # Pular para a próxima iteração do loop
+    }
+    
+    # Salvar o JSON em um arquivo
+    json_filename <- paste0("dados_", user, ".json")
+    write(conteudo, file = json_filename)
+    cat("JSON salvo em:", json_filename, "\n")
+    
+    # Adicionar uma coluna com o nome do usuário
+    dados_json$changesets$user <- user
+    
+    dados_brutos[[user]] <- dados_json$changesets
+  }
+  
+  # Converter a lista de dataframes em um único dataframe
+  dados_df <- bind_rows(dados_brutos)
+  
+  # Salvar a lista de usuários sem resultados em um arquivo CSV
+  write.csv(data.frame(User = usuarios_sem_resultados), "usuarios_sem_resultados.csv", row.names = FALSE)
+  cat("Usuários sem resultados salvos em: usuarios_sem_resultados.csv\n")
+  
+  # Salvar a lista de usuários com erro em um arquivo CSV
+  write.csv(data.frame(User = usuarios_com_erro), "usuarios_com_erro.csv", row.names = FALSE)
+  cat("Usuários com erro salvos em: usuarios_com_erro.csv\n")
+  
+  # Retornar o dataframe
+  return(dados_df)
+}
+
+# Obter os nomes de usuário da tabela YM_Users
+usernames <- YM_Users$Nome
+
+# Chamar a função get_user_info com os nomes de usuário
+YM_Dados <- get_user_info(usernames)
+```
+
+## Transformar e aglutinar arquivos JSON em tabela CSV
+
+```{r}
+library(jsonlite)
+library(dplyr)
+
+# Função para carregar e processar arquivos JSON
+process_json_files <- function(directory) {
+  # Lista todos os arquivos JSON no diretório especificado
+  json_files <- list.files(directory, pattern = "*.json", full.names = TRUE)
+  
+  # Lista para armazenar os dataframes
+  dados_list <- list()
+  
+  # Itera sobre cada arquivo JSON
+  for (file in json_files) {
+    # Carrega o conteúdo do arquivo JSON
+    dados_json <- fromJSON(file)
+    
+    # Extrai o nome do usuário a partir do nome do arquivo
+    user <- sub("dados_(.*)\\.json", "\\1", basename(file))
+    
+    # Adiciona uma coluna com o nome do usuário
+    dados_json$changesets$user <- user
+    
+    # Adiciona o dataframe à lista
+    dados_list[[user]] <- dados_json$changesets
+  }
+  
+  # Combina todos os dataframes em um único dataframe
+  dados_df <- bind_rows(dados_list)
+  
+  return(dados_df)
+}
+
+# Diretório onde os arquivos JSON estão salvos
+directory <- "C:/Users/melan/OneDrive/Documentos/R/YouthMappers/dados_users_json"
+
+# Processa os arquivos JSON e aglutina em um único dataframe
+YM_Dados <- process_json_files(directory)
+
+# Salva o dataframe resultante em um arquivo CSV
+write.csv(YM_Dados, "YM_Dados.csv", row.names = FALSE)
+
+cat("Tabela CSV salva em: YM_Dados.csv\n")
+
+```
+## Analisar o erro que ocorre com os usuarios da lista de error
+
+
+## Recolher arquivos JSON de cada changeset
+```{r}
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+# Função para consultar o Overpass API para um changeset específico de um usuário específico
+consultar_overpass <- function(username, changeset_id, min_lat, min_lon, max_lat, max_lon) {
+  
+  # Construir a consulta Overpass API usando a função opq()
+  overpass_query <- paste0("[out:json];",
+                           "nwr(", min_lat, ",", min_lon, ",", max_lat, ",", max_lon, ")(user:'", username, "')(if: changeset() == ", changeset_id, ");",
+                           "out meta;")
+  
+  cat("Consulta Overpass Query:", overpass_query, "\n")  # Imprimir a consulta
+  
+  url <- paste0("https://overpass-api.de/api/interpreter?data=", URLencode(overpass_query))
+  
+  cat("URL da consulta:", url, "\n")  # Imprimir a URL
+  
+  resposta <- tryCatch({
+    GET(url)
+  }, error = function(e) {
+    cat("Erro ao fazer a solicitação para o changeset:", changeset_id, "Usuário:", username, "\n")
+    return(NULL)  # Retornar NULL para indicar falha na solicitação
+  })
+  
+  # Verificar se a solicitação foi bem-sucedida
+  if (is.null(resposta) || http_status(resposta)$category == "Client error") {
+    stop_for_status(resposta)  # Se houver erro de cliente, ele será tratado no loop
+    return(NULL)
+  }
+  
+  # Extrair o conteúdo da resposta
+  conteudo <- content(resposta, "text", encoding = "UTF-8")
+  
+  # Converter o conteúdo JSON em um data frame
+  overpass_data <- fromJSON(conteudo)
+  
+  return(as.data.frame(overpass_data))
+}
+
+# Lista para armazenar os changesets que não retornam resultados
+changesets_vazios <- c()
+# Lista para armazenar os changesets que geraram erro
+changesets_com_erro <- data.frame(user = character(), changeset_id = numeric(), stringsAsFactors = FALSE)
+
+# Iterar sobre cada linha da tabela YM_Dados
+for (i in 1:nrow(YM_Dados)) {
+  # Consultar o Overpass API para cada changeset_id e usuário
+  resultado <- tryCatch({
+    consultar_overpass(YM_Dados$user[i], YM_Dados$id[i], 
+                       YM_Dados$min_lat[i], YM_Dados$min_lon[i], 
+                       YM_Dados$max_lat[i], YM_Dados$max_lon[i])
+  }, error = function(e) {
+    cat("Erro ao consultar Overpass para o changeset_id:", YM_Dados$id[i], "Usuário:", YM_Dados$user[i], "\n")
+    changesets_com_erro <- rbind(changesets_com_erro, data.frame(user = YM_Dados$user[i], changeset_id = YM_Dados$id[i]))
+    return(NULL)
+  })
+  
+  # Verificar se o resultado está vazio
+  if (is.null(resultado) || nrow(resultado) == 0) {
+    # Se estiver vazio, armazenar o changeset_id na lista de changesets vazios
+    changesets_vazios <- c(changesets_vazios, YM_Dados$id[i])
+  } else {
+    # Salvar o resultado em um arquivo JSON
+    json_filename <- paste0("changeset_", YM_Dados$id[i], ".json")
+    write_json(resultado, json_filename)
+    cat("JSON salvo em:", json_filename, "\n")
+  }
+}
+
+# Verificar quais changesets não retornaram resultados
+cat("Changesets sem resultados:")
+print(changesets_vazios)
+
+# Salvar a lista de changesets com erro em um arquivo CSV
+if (nrow(changesets_com_erro) > 0) {
+  write.csv(changesets_com_erro, "changesets_com_erro.csv", row.names = FALSE)
+  cat("Changesets com erro salvos em: changesets_com_erro.csv\n")
+}
+
+# Salvar a lista de changesets sem resultados em um arquivo CSV
+if (length(changesets_vazios) > 0) {
+  write.csv(data.frame(changeset_id = changesets_vazios), "changesets_vazios.csv", row.names = FALSE)
+  cat("Changesets sem resultados salvos em: changesets_vazios.csv\n")
+}
+```
+
+
+
+## Transformar e aglutinar arquivos JSON em tabela CSV
+```{r}
+library(jsonlite)
+library(dplyr)
+
+# Função para ler e aglutinar arquivos JSON em um dataframe
+aglutinar_json_em_tabela <- function(diretorio) {
+  # Obter a lista de arquivos JSON no diretório
+  arquivos_json <- list.files(diretorio, pattern = "^changeset_\\d+\\.json$", full.names = TRUE)
+  
+  # Lista para armazenar os dataframes
+  lista_dfs <- list()
+  
+  # Ler cada arquivo JSON e convertê-lo em um dataframe
+  for (arquivo in arquivos_json) {
+    cat("Lendo arquivo:", arquivo, "\n")
+    tryCatch({
+      dados_json <- fromJSON(arquivo, flatten = TRUE)
+      cat("Estrutura do JSON lido:\n")
+      print(str(dados_json))
+      
+      # Verificar se o JSON possui a estrutura esperada
+      if (!is.null(dados_json$elements) && length(dados_json$elements) > 0) {
+        df <- as.data.frame(dados_json$elements)
+        lista_dfs[[arquivo]] <- df
+        cat("Arquivo lido com sucesso:", arquivo, "\n")
+      } else {
+        cat("Estrutura de dados inesperada ou arquivo vazio:", arquivo, "\n")
+      }
+    }, error = function(e) {
+      cat("Erro ao ler o arquivo:", arquivo, "\n", e, "\n")
+    })
+  }
+  
+  # Unir todos os dataframes em um único dataframe, garantindo que todas as colunas sejam incluídas
+  if (length(lista_dfs) > 0) {
+    df_final <- bind_rows(lista_dfs, .id = "source")
+    cat("Estrutura do dataframe final antes de processar a coluna 'tags':\n")
+    print(str(df_final))
+    
+    # Verificar se a coluna tags existe e não é nula
+    if ("tags" %in% names(df_final) && any(!sapply(df_final$tags, is.null))) {
+      cat("A coluna tags não é nula para algumas linhas.\n")
+      
+      # Extrair todos os dataframes tags da coluna tags
+      all_tags <- df_final$tags[!sapply(df_final$tags, is.null)]
+      
+      # Combinar todos os dataframes tags em um único dataframe
+      combined_tags <- bind_rows(all_tags, .id = "row_id")
+      
+      # Combinar combined_tags com o dataframe df_final
+      df_final <- cbind(df_final, combined_tags)
+      cat("Dataframe combined_tags combinado com sucesso com o dataframe df_final.\n")
+      
+      # Remover a coluna tags do dataframe df_final
+      df_final <- df_final[!names(df_final) %in% "tags"]
+      cat("Coluna tags removida do dataframe df_final.\n")
+    } else {
+      cat("A coluna tags é nula para todas as linhas.\n")
+    }
+    
+    return(df_final)
+  } else {
+    cat("Nenhum dado foi lido dos arquivos JSON.\n")
+    return(data.frame())
+  }
+}
+
+# Chamar a função para aglutinar os arquivos JSON em um dataframe
+diretorio <- "C:/Users/melan/OneDrive/Documentos/R/YouthMappers/dados_changesets_json"
+YM_Changesets_Aglutinados <- aglutinar_json_em_tabela(diretorio)
+
+# Verificar o resultado e exibir um resumo
+if (nrow(YM_Changesets_Aglutinados) > 0) {
+  cat("Número de linhas no dataframe final:", nrow(YM_Changesets_Aglutinados), "\n")
+  print(head(YM_Changesets_Aglutinados))
+} else {
+  cat("O dataframe final está vazio.\n")
+}
+
+# Opcional: Salvar o dataframe resultante em um arquivo CSV
+if (nrow(YM_Changesets_Aglutinados) > 0) {
+  write.csv(YM_Changesets_Aglutinados, "YM_Changesets_Aglutinados.csv", row.names = FALSE)
+  cat("Tabela CSV aglutinada salva em: YM_Changesets_Aglutinados.csv\n")
+}
+```
+
+
+
+## Dividir e limpar tabelas por tipo
+
+

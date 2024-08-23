@@ -1,0 +1,11 @@
+- Demonstração em formato cartograma 
+
+- Dados estruturados:
+	- data modificação
+
+- JSON
+	- exportar json dos changesets
+	- exportar csv
+
+- Visualização de dados:
+	- 

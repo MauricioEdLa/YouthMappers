@@ -27,9 +27,16 @@ Primeira etapa será fazer uma tabela com o nome de todos os membros ativos.
 YM_Users <- data.frame(
   Nome = character()
 )
-users <- data.frame(Nome = c("Mauricio Ed", "Aimée Borges", "Nivea Pinheiro", "Felipe_Ximenes"))
 
-YM_Users <- rbind(YM_Users, users)
+Youth_Users <- read.csv("cadastro_YM.csv", header = TRUE)
+
+users <- Youth_Users$username_osm
+
+YM_Users <- data.frame(Nome = users, check.names = FALSE)
+
+YM_Users <- YM_Users[-c(9, 10, 13, 14, 21, 22, 31, 34, 35, 41), ]
+
+YM_Users <- data.frame(Nome = YM_Users, check.names = FALSE)
 
 print(YM_Users)
 ```
@@ -50,6 +57,9 @@ get_user_info <- function(username) {
     
     # Faça a solicitação à API de Edições para obter o histórico de edições do usuário pelo UID
     url <- paste0("https://api.openstreetmap.org/api/0.6/changesets?display_name=", uid_usuario)
+    
+    cat("URL da consulta:", url, "\n") # Imprime a URL
+    
     resposta <- GET(url)
     
     # Verifique se a solicitação foi bem-sucedida
@@ -133,12 +143,13 @@ resultados <- list()
 changesets_vazios <- c()
 
 # Valor de changeset_id a ser evitado
-changeset_id_evitado <- 149048503  # Substitua x pelo valor desejado
+changeset_id_evitado <- c(149048503, 142055347, 144440738, 137264436, 150985417, 149008008, 148266830, 118237095, 118237010, 109529140, 89710452, 89710271, 89709768, 89370718, 89369859, 89369168, 88581261, 88510801, 88424727, 87802062, 144418501, 144418447, 144418381, 142157944, 135320215, 135319044, 129533055, 89710267, 89062718, 89062630, 88751476, 88509391, 88509318, 88509168, 88509102, 88509048, 86375858, 86375612
+, 85821545, 85796055, 137305694, 136760884, 136760816, 136476252, 118398046, 110361450, 89325722, 89325398)  # Substitua x pelo valor desejado / Este erro precisa ser corrigido.
 
 # Iterar sobre cada linha da tabela YM_Dados
 for (i in 1:nrow(YM_Dados)) {
   # Verificar se o changeset_id é igual ao valor a ser evitado
-  if (YM_Dados$id[i] == changeset_id_evitado) {
+  if (YM_Dados$id[i] %in% changeset_id_evitado) {
     cat("Pulando a consulta para o changeset_id", changeset_id_evitado, "\n")
     next  # Pular para a próxima iteração do loop
   }
@@ -177,7 +188,238 @@ resultados <- resultados[!sapply(resultados, is.null)]
 # Verificar se há resultados
 if (length(resultados) > 0) {
   # Unir os resultados em um único data frame
-  resultados_completos <- bind_rows(resultados)
+  YM_Changesets <- bind_rows(resultados)
 }
+```
+
+# Requisições que Deram Erro
+
+```{r Tabelas com Usernames Errados}
+# Índices das linhas a serem subtraídas
+indices_subtraidos <- c(9, 10, 13, 14, 21, 22, 31, 34, 35, 41)
+
+# Criar uma tabela com as linhas selecionadas
+YM_Users_Error <- data.frame(
+  nome_completo = Youth_Users$Nome.Completo[indices_subtraidos],
+  username_osm = Youth_Users$username_osm[indices_subtraidos]
+)
+```
+
+```{r Tabelas com Changesets Errados}
+# Lista de valores de id para selecionar
+id_para_selecionar <- c(149048503, 142055347, 144440738, 137264436, 150985417, 149008008, 148266830, 118237095, 118237010, 109529140, 89710452, 89710271, 89709768, 89370718, 89369859, 89369168, 88581261, 88510801, 88424727, 87802062, 144418501, 144418447, 144418381, 142157944, 135320215, 135319044, 129533055, 89710267, 89062718, 89062630, 88751476, 88509391, 88509318, 88509168, 88509102, 88509048, 86375858, 86375612 , 85821545, 85796055, 137305694, 136760884, 136760816, 136476252, 118398046, 110361450, 89325722, 89325398)
+
+# Selecionar linhas com base nos valores de id
+YM_Changesets_Error <- YM_Dados[YM_Dados$id %in% id_para_selecionar, ]
+```
+
+# Limpeza das Tabelas
+
+```{r Aninhandos as Tabelas das Colunas Elements_Tags}
+# Verificar se há resultados
+if (length(resultados) > 0) {
+  cat("Número de resultados encontrados:", length(resultados), "\n")
+  
+  # Unir os resultados em um único data frame
+  YM_Changesets <- bind_rows(resultados)
+  cat("Dataframe YM_Changesets criado com sucesso.\n")
+  
+  # Verificar se a coluna elements.tags não é nula para nenhuma linha
+  if (any(!is.null(YM_Changesets$elements.tags))) {
+    cat("A coluna elements.tags não é nula para nenhuma linha.\n")
+    
+    # Extrair todos os dataframes elements.tags da coluna elements.tags
+    all_elements_tags <- YM_Changesets$elements.tags[!sapply(YM_Changesets$elements.tags, is.null)]
+    
+    # Combinar todos os dataframes elements.tags em um único dataframe
+    combined_elements_tags <- dplyr::bind_rows(all_elements_tags, .id = "row_id")
+    
+    # Renomear as colunas, se desejar
+    # colnames(combined_elements_tags) <- c("nova_coluna_1", "nova_coluna_2", ...)
+    
+    # Combinar combined_elements_tags com o dataframe YM_Changesets
+    YM_Changesets <- cbind(YM_Changesets, combined_elements_tags)
+    cat("Dataframe combined_elements_tags combinado com sucesso com o dataframe YM_Changesets.\n")
+  } else {
+    cat("A coluna elements.tags é nula para todas as linhas.\n")
+  }
+  
+  # Remover a coluna elements.tags do dataframe YM_Changesets
+  YM_Changesets <- YM_Changesets[!names(YM_Changesets) %in% "elements.tags"]
+  cat("Coluna elements.tags removida do dataframe YM_Changesets.\n")
+}
+
+# Output final
+cat("Processamento concluído.\n")
+```
+```{r Aninhando as Tabelas das Coluna Tags}
+# Verificar se há resultados
+if (length(resultados) > 0) {
+  cat("Número de resultados encontrados:", length(resultados), "\n")
+  
+  # Unir os resultados em um único data frame
+  YM_Changesets <- bind_rows(resultados)
+  cat("Dataframe YM_Changesets criado com sucesso.\n")
+  
+  # Verificar se a coluna elements.tags não é nula para nenhuma linha
+  if (any(!is.null(YM_Changesets$elements.tags))) {
+    cat("A coluna elements.tags não é nula para nenhuma linha.\n")
+    
+    # Extrair todos os dataframes elements.tags da coluna elements.tags
+    all_elements_tags <- YM_Changesets$elements.tags[!sapply(YM_Changesets$elements.tags, is.null)]
+    
+    # Combinar todos os dataframes elements.tags em um único dataframe
+    combined_elements_tags <- dplyr::bind_rows(all_elements_tags, .id = "row_id")
+    
+    # Renomear as colunas, se desejar
+    # colnames(combined_elements_tags) <- c("nova_coluna_1", "nova_coluna_2", ...)
+    
+    # Combinar combined_elements_tags com o dataframe YM_Changesets
+    YM_Changesets <- cbind(YM_Changesets, combined_elements_tags)
+    cat("Dataframe combined_elements_tags combinado com sucesso com o dataframe YM_Changesets.\n")
+  } else {
+    cat("A coluna elements.tags é nula para todas as linhas.\n")
+  }
+  
+  # Remover a coluna elements.tags do dataframe YM_Changesets
+  YM_Changesets <- YM_Changesets[!names(YM_Changesets) %in% "elements.tags"]
+  cat("Coluna elements.tags removida do dataframe YM_Changesets.\n")
+}
+
+# Output final
+cat("Processamento concluído.\n")
+```
+
+
+```{r Limpar YM_Changesets}
+# Lista de índices das colunas que você deseja excluir
+colunas_para_excluir <- c(1,2,4)
+
+# Excluir as colunas especificadas
+YM_Changesets <- YM_Changesets[, -colunas_para_excluir]
+```
+
+```{r Alterar Nome das Colunas}
+limpar_nomes_colunas <- function(df) {
+  nomes_colunas <- colnames(df)
+  # Substituir caracteres especiais por _
+  novos_nomes_colunas <- gsub("[^[:alnum:]_]", "_", nomes_colunas)
+  # Substituir $ por _
+  novos_nomes_colunas <- gsub("\\$", "_", novos_nomes_colunas)
+  # Substituir : por _
+  novos_nomes_colunas <- gsub(":", "_", novos_nomes_colunas)
+  colnames(df) <- novos_nomes_colunas
+  return(df)
+}
+
+YM_Changesets <- limpar_nomes_colunas(YM_Changesets)
+```
+
+# Gráficos 
+
+```{r Usuarios com Maior Numero de Changesets}
+# Contar o número de changesets por usuário
+changesets_por_usuario <- table(YM_Dados$user)
+
+# Ordenar os usuários pelo número de changesets (do maior para o menor)
+usuarios_ordenados <- names(sort(changesets_por_usuario, decreasing = TRUE))
+
+# Criar o gráfico de barras
+barplot(changesets_por_usuario[usuarios_ordenados], 
+        main = "Ranking de Usuários por Número de Changesets",
+        ylab = "Número de Changesets",
+        las = 2,  # Rotacionar os rótulos do eixo x
+        col = "skyblue",  # Cor das barras
+        ylim = c(0, max(changesets_por_usuario) * 1.1),  # Ajustar o limite do eixo y
+        cex.names = 0.8)  # Tamanho do texto dos rótulos do eixo x
+
+```
+
+```{r Tags Mais Utilizadas}
+library(ggplot2)
+library(dplyr)
+
+# Contar o número de registros preenchidos em cada coluna a partir da coluna 14
+contagem_registros <- sapply(YM_Changesets[14:ncol(YM_Changesets)], function(col) sum(!is.na(col)))
+
+# Criar um dataframe com os nomes das colunas e a contagem de registros
+dados_contagem <- data.frame(
+  Coluna = names(contagem_registros),
+  Registros = contagem_registros
+)
+
+# Ordenar o dataframe pela contagem de registros (do maior para o menor)
+dados_contagem <- dados_contagem %>% 
+  arrange(desc(Registros))
+
+# Selecionar os 30 maiores registros
+dados_contagem_30 <- head(dados_contagem, 30)
+
+# Criar o gráfico de barras
+grafico_tags <- ggplot(dados_contagem_30, aes(x = reorder(Coluna, -Registros), y = Registros)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "30 colunas do YM_Changesets com mais registros",
+       x = "Tag",
+       y = "Número de Registros") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.2))
+
+# Mostrar o gráfico
+print(grafico_tags)
+```
+
+```{r Tags mais Utilizadas sem os 6 Maiores registros}
+# Excluir os 6 maiores registros
+dados_contagem_24 <- dados_contagem_30[-(1:6), ]
+
+# Criar o gráfico de barras sem os 6 maiores registros
+grafico_tags <- ggplot(dados_contagem_24, aes(x = reorder(Coluna, -Registros), y = Registros)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "30 colunas do YM_Changesets com mais registros (excluindo os 6 maiores)",
+       x = "Tag",
+       y = "Número de Registros") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.2))
+
+# Mostrar o gráfico
+print(grafico_tags)
+```
+
+
+```{r Tasks com maior numero de atividades}
+# Contar a frequência de cada host
+frequencia_hosts <- table(YM_Dados$tags$host)
+
+# Ordenar os hosts por frequência em ordem decrescente
+hosts_ordenados <- sort(frequencia_hosts, decreasing = TRUE)
+
+# Extrair os 30 primeiros hosts e suas frequências
+top_10_hosts <- head(hosts_ordenados, 10)
+
+# Plotar um gráfico de barras para os 30 principais hosts
+grafico <- barplot(top_10_hosts, main = "Top 10 Hosts com Maior Número de Entradas",
+                   xlab = "Número de Entradas", ylab = "Hosts",
+                   col = "skyblue", horiz = TRUE)
+
+# Adicionar os nomes dos hosts ao lado das barras
+text(top_10_hosts, grafico, labels = names(top_10_hosts), pos = 4, col = "black")
+
+print(top_10_hosts)
+```
+
+```{r Quantidade de Buildings na Task de São Marcos}
+# Filtrar YM_Dados para obter os registros com o valor de "tag$host" específico
+filtro_host <- YM_Dados$tag$host == "https://tasks.openstreetmap.us/projects/538/map/"
+ids_filtrados <- YM_Dados$id[filtro_host]
+
+# Filtrar YM_Changesets para obter os registros correspondentes aos IDs filtrados
+filtros_changesets <- YM_Changesets$elements_changeset %in% ids_filtrados
+changesets_filtrados <- YM_Changesets[filtros_changesets, ]
+
+# Contar quantos registros na coluna "building" têm o valor "yes"
+total_yes_building <- sum(changesets_filtrados$building == "yes", na.rm = TRUE)
+
+# Imprimir o total
+print(total_yes_building)
 ```
 

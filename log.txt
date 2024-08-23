@@ -1,0 +1,6 @@
+V0.1:
+- Dados de todos os usuarios
+- Dados dos changesets
+- Grafico do ranque dos usuarios com maior numero de changesets
+- Grafico do ranque das tasks por numero de changesets
+- Grafico da quantidade de buildings em São Marcos
